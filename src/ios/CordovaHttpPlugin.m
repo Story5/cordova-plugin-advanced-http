@@ -405,6 +405,62 @@
     }
 }
 
+- (void)uploadFiles:(CDVInvokedUrlCommand*)command {
+    AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
+    manager.securityPolicy = securityPolicy;
+
+    NSString *url = [command.arguments objectAtIndex:0];
+    NSDictionary *parameters = [command.arguments objectAtIndex:1];
+    NSString *serializerName = [command.arguments objectAtIndex:2];
+    NSDictionary *headers = [command.arguments objectAtIndex:3];
+    NSArray *filePaths = [command.arguments objectAtIndex: 4];
+    NSString *name = [command.arguments objectAtIndex: 5];
+    NSTimeInterval timeoutInSeconds = [[command.arguments objectAtIndex:6] doubleValue];
+
+    [self setRequestSerializer: serializerName forManager: manager];
+    [self setRequestHeaders: headers forManager: manager];
+    [self setTimeout:timeoutInSeconds forManager:manager];
+    [self setRedirect: manager];
+
+    CordovaHttpPlugin* __weak weakSelf = self;
+    manager.responseSerializer = [TextResponseSerializer serializer];
+
+    @try {
+        [manager POST:url parameters:parameters constructingBodyWithBlock:^(id<AFMultipartFormData> formData) {
+            NSError *error;
+            for (int i = 0; i < [filePaths count]; i++) {
+                id obj = [filePaths objectAtIndex:i];
+                NSString *filePath = (NSString *) obj;
+                NSURL *fileURL = [NSURL URLWithString: filePath];
+                [formData appendPartWithFileURL:fileURL name:name error:&error];
+            }
+            if (error) {
+                NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+                [dictionary setObject:[NSNumber numberWithInt:500] forKey:@"status"];
+                [dictionary setObject:@"Could not add file to post body." forKey:@"error"];
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:dictionary];
+                [weakSelf.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                return;
+            }
+        } progress:nil success:^(NSURLSessionTask *task, id responseObject) {
+            NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+            [self handleSuccess:dictionary withResponse:(NSHTTPURLResponse*)task.response andData:responseObject];
+
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:dictionary];
+            [weakSelf.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        } failure:^(NSURLSessionTask *task, NSError *error) {
+            NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+            [self handleError:dictionary withResponse:(NSHTTPURLResponse*)task.response error:error];
+
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:dictionary];
+            [weakSelf.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
+    }
+    @catch (NSException *exception) {
+        [self handleException:exception withCommand:command];
+    }
+}
+
 - (void)uploadFile:(CDVInvokedUrlCommand*)command {
     AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
     manager.securityPolicy = securityPolicy;
